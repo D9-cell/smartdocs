@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-tag-stage-0
+      author: statecore
+      logicalFilePath: db/changelog/changes/004-tag-stage-0.yaml
+      changes:
+        - tagDatabase:
+            tag: stage-0

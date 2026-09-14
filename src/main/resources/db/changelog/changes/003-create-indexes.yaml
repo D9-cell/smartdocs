@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-indexes
+      author: statecore
+      logicalFilePath: db/changelog/changes/003-create-indexes.yaml
+      changes:
+        - sql:
+            sql: CREATE INDEX idx_document_active_updated ON document (updated_at DESC) WHERE deleted_at IS NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_document_active_updated
+  - changeSet:
+      id: 003-create-indexes-revision
+      author: statecore
+      logicalFilePath: db/changelog/changes/003-create-indexes.yaml
+      changes:
+        - createIndex:
+            indexName: idx_revision_doc_version
+            tableName: document_revision
+            columns:
+              - column:
+                  name: document_id
+              - column:
+                  name: version
+                  descending: true
+      rollback:
+        - dropIndex:
+            indexName: idx_revision_doc_version
+            tableName: document_revision

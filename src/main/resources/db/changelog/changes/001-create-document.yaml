@@ -1,0 +1,83 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-document
+      author: statecore
+      logicalFilePath: db/changelog/changes/001-create-document.yaml
+      changes:
+        - createTable:
+            tableName: document
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(255)
+                  defaultValue: Untitled
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: text
+                  defaultValue: ""
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content_hash
+                  type: char(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content_size_bytes
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 1
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(64)
+                  defaultValue: anonymous
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_by
+                  type: varchar(64)
+                  defaultValue: anonymous
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: deleted_at
+                  type: timestamptz
+                  constraints:
+                    nullable: true
+        - sql:
+            sql: ALTER TABLE document ADD CONSTRAINT chk_document_content_size CHECK (content_size_bytes >= 0 AND content_size_bytes <= 1048576)
+        - sql:
+            sql: ALTER TABLE document ADD CONSTRAINT chk_document_version CHECK (version >= 1)
+      rollback:
+        - sql:
+            sql: ALTER TABLE document DROP CONSTRAINT IF EXISTS chk_document_version
+        - sql:
+            sql: ALTER TABLE document DROP CONSTRAINT IF EXISTS chk_document_content_size
+        - dropTable:
+            tableName: document

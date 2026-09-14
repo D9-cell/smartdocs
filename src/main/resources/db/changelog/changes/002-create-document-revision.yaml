@@ -1,0 +1,72 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-document-revision
+      author: statecore
+      logicalFilePath: db/changelog/changes/002-create-document-revision.yaml
+      changes:
+        - createTable:
+            tableName: document_revision
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: document_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_revision_document
+                    references: document(id)
+                    deleteCascade: true
+              - column:
+                  name: version
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content_hash
+                  type: char(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content_size_bytes
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_id
+                  type: varchar(64)
+                  defaultValue: anonymous
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_type
+                  type: varchar(16)
+                  defaultValue: HUMAN
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: document_revision
+            columnNames: document_id, version
+            constraintName: uk_revision_document_version
+        - sql:
+            sql: ALTER TABLE document_revision ADD CONSTRAINT chk_revision_version CHECK (version >= 1)
+      rollback:
+        - sql:
+            sql: ALTER TABLE document_revision DROP CONSTRAINT IF EXISTS chk_revision_version
+        - dropTable:
+            tableName: document_revision
