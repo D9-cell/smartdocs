@@ -1,14 +1,6 @@
 package com.deepon.smartdocs.exception;
 
 import com.deepon.smartdocs.config.RequestIdFilter;
-import com.deepon.smartdocs.exception.ContentHashMismatchException;
-import com.deepon.smartdocs.exception.ContentTooLargeException;
-import com.deepon.smartdocs.exception.DocumentNotFoundException;
-import com.deepon.smartdocs.exception.InvalidContentException;
-import com.deepon.smartdocs.exception.MalformedIfMatchException;
-import com.deepon.smartdocs.exception.PreconditionRequiredException;
-import com.deepon.smartdocs.exception.RequestBodyTooLargeIOException;
-import com.deepon.smartdocs.exception.VersionMismatchException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;

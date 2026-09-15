@@ -47,7 +47,7 @@ minute.
 Test layers, matching design doc section 9:
 
 | Class | Layer | What it proves |
-|---|---|---|
+| --- | --- | --- |
 | `ContentValidatorTest`, `ContentHasherTest`, `EtagSupportTest` | Unit | Every row of the section 8.1 edge-case table; hash determinism; header parsing |
 | `DocumentRepositoryTest` | `@DataJpaTest` + real Postgres | Conditional-update row counts, unique constraint, soft-delete exclusion |
 | `DocumentServiceTest` | Service, real DB | Every `DocumentService` method and error branch |
