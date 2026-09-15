@@ -1,11 +1,11 @@
 spring:
   application:
-    name: statecore
+    name: smartdocs
 
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:statecore}
-    username: ${DB_USER:statecore}
-    password: ${DB_PASSWORD:statecore}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:smartdocs}
+    username: ${DB_USER:smartdocs}
+    password: ${DB_PASSWORD:smartdocs}
     hikari:
       maximum-pool-size: 10
       connection-timeout: 3000
@@ -30,7 +30,7 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
-statecore:
+smartdocs:
   content:
     max-bytes: 1048576
   request:

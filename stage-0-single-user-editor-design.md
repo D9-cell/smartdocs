@@ -98,7 +98,7 @@ Write these four into the code now even though nothing uses them yet.
 
 - One JVM process. Stateless. No session affinity needed.
 - One PostgreSQL instance, local via Docker Compose.
-- Static frontend served by the same Spring Boot app from `src/main/resources/static`. One origin. No CORS problem in Stage 0.
+- Static frontend lives in the top-level `frontend/` directory and is packaged into the jar as `static/` at build time, then served by the same Spring Boot app. One origin. No CORS problem in Stage 0.
 - Liquibase runs inside the application at boot, before Hibernate validation.
 
 Running two app instances behind a load balancer must work with zero code change. Test this in Stage 0 by starting two instances on different ports against one database. Stateless design gets verified early, cheaply.
@@ -191,38 +191,47 @@ Stage 0 resolves conflict by user choice. Stage 5 replaces the choice with autom
 ### 5.1 Package layout
 
 ```
-com.deepon.statecore
-├── StateCoreApplication.java
+com.deepon.smartdocs
+├── SmartdocsApplication.java
 ├── config
 │   ├── JacksonConfig.java          strict deserialization, fail on unknown fields
 │   ├── ClockConfig.java            Clock bean, UTC
 │   └── WebConfig.java              request size limits, static resource mapping
-├── web
-│   ├── DocumentController.java
-│   ├── dto
-│   │   ├── CreateDocumentRequest.java
-│   │   ├── UpdateContentRequest.java
-│   │   ├── DocumentResponse.java
-│   │   ├── DocumentSummaryResponse.java
-│   │   └── RevisionSummaryResponse.java
-│   ├── EtagSupport.java            parse and format If-Match and ETag
-│   └── GlobalExceptionHandler.java maps domain errors to ProblemDetail
+├── controller
+│   ├── DocumentController.java     routes declared on @RequestMapping
+│   └── EtagSupport.java            parse and format If-Match and ETag
+├── dto
+│   ├── CreateDocumentRequest.java
+│   ├── UpdateContentRequest.java
+│   ├── DocumentResponse.java
+│   ├── DocumentSummaryResponse.java
+│   └── RevisionSummaryResponse.java
 ├── service
-│   ├── DocumentService.java
-│   ├── ContentValidator.java
-│   └── ContentHasher.java
-├── domain
-│   ├── Document.java               entity
-│   ├── DocumentRevision.java       entity
+│   ├── DocumentService.java        interface — the business contract
+│   ├── ContentHasher.java
+│   └── impl
+│       └── DocumentServiceImpl.java
+├── validator
+│   └── ContentValidator.java
+├── repository
 │   ├── DocumentRepository.java
-│   └── DocumentRevisionRepository.java
-└── error
+│   ├── DocumentRevisionRepository.java
+│   ├── DocumentSummaryProjection.java
+│   └── RevisionSummaryProjection.java
+├── entity
+│   ├── Document.java               entity
+│   └── DocumentRevision.java       entity
+└── exception
     ├── DocumentNotFoundException.java
     ├── VersionMismatchException.java
     ├── PreconditionRequiredException.java
     ├── ContentTooLargeException.java
-    └── InvalidContentException.java
+    ├── InvalidContentException.java
+    └── GlobalExceptionHandler.java maps domain errors to ProblemDetail
 ```
+
+The browser client lives outside this tree, in the top-level `frontend/`
+directory; Maven copies it into the jar as `static/` at build time.
 
 ### 5.2 Responsibility of each unit
 
@@ -418,7 +427,7 @@ Content-Type: application/problem+json
 ETag: "8"
 
 {
-  "type": "https://statecore.dev/problems/version-mismatch",
+  "type": "https://smartdocs.dev/problems/version-mismatch",
   "title": "Version mismatch",
   "status": 412,
   "detail": "Document was modified after the version you loaded.",
@@ -695,7 +704,7 @@ The conflict counter matters. At Stage 0 with one user it should sit near zero. 
 Ten steps. Each step ends with a verifiable check. Do not begin a step before the previous check passes.
 
 ### Step 1: Project skeleton
-Files: `build.gradle.kts` or `pom.xml`, `StateCoreApplication.java`, `application.yaml`, `docker-compose.yml`.
+Files: `build.gradle.kts` or `pom.xml`, `SmartdocsApplication.java`, `application.yaml`, `docker-compose.yml`.
 Dependencies: web, data-jpa, validation, liquibase, postgresql driver, actuator, testcontainers, junit.
 Check: app boots with a real PostgreSQL container, `/actuator/health` returns UP.
 

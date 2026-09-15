@@ -12,9 +12,9 @@
   </parent>
 
   <groupId>com.deepon</groupId>
-  <artifactId>statecore</artifactId>
+  <artifactId>smartdocs</artifactId>
   <version>0.1.0-stage0</version>
-  <name>statecore</name>
+  <name>smartdocs</name>
   <description>Stage 0: single-user durable text editor</description>
 
   <properties>
@@ -77,6 +77,15 @@
   </dependencies>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <directory>frontend</directory>
+        <targetPath>static</targetPath>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.springframework.boot</groupId>

@@ -1,4 +1,4 @@
-# StateCore — Stage 0
+# SmartDocs — Stage 0
 
 A single-user, durably-persisted plain-text editor. Java 21, Spring Boot 3,
 PostgreSQL 16 via Liquibase, vanilla-JS frontend. Full design in
@@ -63,15 +63,20 @@ Coverage on the two classes the design doc calls out by name (section 12):
 ## Project layout
 
 ```
-src/main/java/com/deepon/statecore/
-  config/    Clock, Jackson, request-size-limiting filter, request-id filter
-  web/       Controller, DTOs, ETag parsing, RFC 9457 error mapping
-  service/   DocumentService, ContentValidator, ContentHasher
-  domain/    JPA entities and repositories
-  error/     Typed domain exceptions
+src/main/java/com/deepon/smartdocs/
+  config/       Clock, Jackson, request-size-limiting filter, request-id filter
+  controller/   DocumentController (routing lives on its @RequestMapping), EtagSupport
+  dto/          Request and response records — the wire contract
+  service/      DocumentService (interface), ContentHasher
+  service/impl/ DocumentServiceImpl — the business rules
+  validator/    ContentValidator
+  repository/   Spring Data repositories and query projections
+  entity/       JPA entities
+  exception/    Typed domain exceptions + GlobalExceptionHandler (RFC 9457 mapping)
 src/main/resources/
   db/changelog/   Liquibase changelogs (one file per changeset, see section 7.6)
-  static/         index.html, editor.js, api.js, draft.js, styles.css
+frontend/         index.html, styles.css, js/{api,draft,editor}.js
+                  — packaged into the jar as static/ at build time (see pom.xml)
 ```
 
 ## Runbook
