@@ -1,8 +1,9 @@
 package com.deepon.smartdocs;
 
-import com.deepon.smartdocs.entity.Document;
-import com.deepon.smartdocs.service.ContentHasher;
-import com.deepon.smartdocs.service.DocumentService;
+import com.deepon.smartdocs.document.entity.Document;
+import com.deepon.smartdocs.document.ContentHasher;
+import com.deepon.smartdocs.document.service.DocumentService;
+import com.deepon.smartdocs.revision.service.RevisionService;
 import com.deepon.smartdocs.support.AbstractPostgresTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,9 @@ class IntegrationSaveReloadTest extends AbstractPostgresTest {
 
     @Autowired
     private ContentHasher contentHasher;
+
+    @Autowired
+    private RevisionService revisionService;
 
     private ConfigurableApplicationContext startIndependentInstance() {
         // SpringApplicationBuilder#properties adds a *default* (lowest-priority)
@@ -101,7 +105,7 @@ class IntegrationSaveReloadTest extends AbstractPostgresTest {
         Document result = documentService.updateContent(created.getId(), created.getVersion(), "same content", null);
 
         assertThat(result.getVersion()).isEqualTo(created.getVersion());
-        assertThat(documentService.listRevisions(created.getId())).hasSize(1);
+        assertThat(revisionService.listRevisions(created.getId())).hasSize(1);
     }
 
     @Test
@@ -110,6 +114,6 @@ class IntegrationSaveReloadTest extends AbstractPostgresTest {
         Document v2 = documentService.updateContent(created.getId(), created.getVersion(), "v2", null);
         documentService.updateContent(created.getId(), v2.getVersion(), "v3", null);
 
-        assertThat(documentService.listRevisions(created.getId())).hasSize(3);
+        assertThat(revisionService.listRevisions(created.getId())).hasSize(3);
     }
 }

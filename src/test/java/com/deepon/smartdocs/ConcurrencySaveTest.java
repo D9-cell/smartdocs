@@ -1,8 +1,9 @@
 package com.deepon.smartdocs;
 
-import com.deepon.smartdocs.entity.Document;
-import com.deepon.smartdocs.exception.VersionMismatchException;
-import com.deepon.smartdocs.service.DocumentService;
+import com.deepon.smartdocs.document.entity.Document;
+import com.deepon.smartdocs.document.exception.VersionMismatchException;
+import com.deepon.smartdocs.document.service.DocumentService;
+import com.deepon.smartdocs.revision.service.RevisionService;
 import com.deepon.smartdocs.support.AbstractPostgresTest;
 import org.junit.jupiter.api.RepeatedTest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +38,9 @@ class ConcurrencySaveTest extends AbstractPostgresTest {
     @Autowired
     private DocumentService documentService;
 
+    @Autowired
+    private RevisionService revisionService;
+
     @RepeatedTest(100)
     void exactlyOneOfTwoConcurrentSameVersionSavesSucceeds() throws Exception {
         Document created = documentService.create("Race", "initial");
@@ -67,7 +71,7 @@ class ConcurrencySaveTest extends AbstractPostgresTest {
 
         Document finalState = documentService.get(id);
         assertThat(finalState.getVersion()).isEqualTo(2L);
-        assertThat(documentService.listRevisions(id)).hasSize(2);
+        assertThat(revisionService.listRevisions(id)).hasSize(2);
     }
 
     private Runnable saveAttempt(UUID id, long baseVersion, String content, CountDownLatch startLatch,

@@ -1,6 +1,6 @@
 package com.deepon.smartdocs.config;
 
-import com.deepon.smartdocs.exception.RequestBodyTooLargeIOException;
+import com.deepon.smartdocs.common.exception.RequestBodyTooLargeIOException;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletInputStream;
 
