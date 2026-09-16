@@ -7,6 +7,14 @@ Stage 2 design doc ("Stage 2: Real-time single-document sync") and the
 Stage 1 design doc it builds on ("Stage 1: Document Backend with Identity
 and Ownership"); this file is the "how do I actually run it" complement.
 
+**Stage 3 is in progress.** The build is now two Maven modules: `crdt-core`
+(the YATA sequence CRDT — pure Java, no Spring, no IO, no framework on its
+classpath) and `smartdocs-app` (everything else). The split is enforced by
+the build rather than by convention, because the merge algorithm has to be
+testable without a server and has to match the JavaScript port character for
+character. `crdt-core` is scaffolded but not yet implemented; text sync is
+still Stage 2's last-write-wins until Stage 3 phase 3.3 lands.
+
 ## Real-time sync (Stage 2)
 
 Every open tab holds one WebSocket connection (`/ws`), authenticated with a
@@ -38,8 +46,16 @@ horizontally.
 
 ```bash
 docker compose up -d          # starts Postgres 16 on localhost:5433
-DB_PORT=5433 SMARTDOCS_COOKIE_SECURE=false mvn spring-boot:run   # boots the app on :8080, migrating the schema at startup
+DB_PORT=5433 SMARTDOCS_COOKIE_SECURE=false mvn -pl smartdocs-app -am spring-boot:run   # boots the app on :8080, migrating the schema at startup
 ```
+
+Run it from the repository root, not from inside `smartdocs-app`. The `-pl`
+picks the runnable module and `-am` ("also make") rebuilds `crdt-core` from
+source in the same reactor — so a change there is always picked up, instead
+of silently resolving a stale `crdt-core` jar out of `~/.m2`. The parent pom
+skips `spring-boot-maven-plugin` for itself and for `crdt-core`, since a
+command-line goal otherwise runs against every module in the reactor and
+neither of those has a main class.
 
 The compose file maps the container's Postgres to host port **5433**, not
 5432 — many dev machines already run a native/system Postgres on 5432 (set
@@ -96,23 +112,26 @@ Test layers, matching the design docs' testing-strategy sections:
 ## Project layout
 
 ```
-src/main/java/com/deepon/smartdocs/
-  common/       Actor, ActorArgumentResolver, IdGenerator (UUIDv7), Sha256, shared exceptions
-  config/       Clock, Jackson, request-size-limiting filter, request-id filter, WebConfig
-  security/     OriginGuardFilter, OriginMatcher, SessionAuthFilter, PasswordHasher, IpHasher, CookieSupport
-  document/     DocumentController, DocumentService(+impl), DocumentRepository, CursorCodec — owner-scoped;
-                applyLastWriteWins is the WS write path, rename/softDelete publish DocumentChangedEvent
-  revision/     RevisionController, RevisionService(+impl) — owner-scoped; revisions now carry base_version/source/session_id
-  user/         AuthController, AuthService/SessionService/UserService(+impl), LoginRateLimiter,
-                UserValidator, entities (AppUser, UserSession, LoginAttempt), repositories
-  websocket/    DocumentWebSocketHandler, WsHandshakeInterceptor, WebSocketConfig, WsMessageCodec,
-                envelope/payload records, WsTicketController/Service(+impl)/Repository, WsTicketCleanupJob
-  realtime/     SessionHandle/Registry, RoomRegistry, OutboundSender, DocumentBroadcaster, SessionReaper,
-                TokenBucket, RealtimeMetricsSampler, InstanceCountGuard — holds no document business rules
-src/main/resources/
-  db/changelog/   Liquibase changelogs (one file per changeset)
-frontend/         index.html, login.html, styles.css, js/{api,draft,editor,syncClient}.js
-                  — packaged into the jar as static/ at build time (see pom.xml)
+pom.xml           parent/aggregator: modules, dependencyManagement, jacoco
+crdt-core/        Stage 3: YATA sequence CRDT — pure Java, junit+assertj only, no Spring/IO
+smartdocs-app/
+  src/main/java/com/deepon/smartdocs/
+    common/       Actor, ActorArgumentResolver, IdGenerator (UUIDv7), Sha256, shared exceptions
+    config/       Clock, Jackson, request-size-limiting filter, request-id filter, WebConfig
+    security/     OriginGuardFilter, OriginMatcher, SessionAuthFilter, PasswordHasher, IpHasher, CookieSupport
+    document/     DocumentController, DocumentService(+impl), DocumentRepository, CursorCodec — owner-scoped;
+                  applyLastWriteWins is the WS write path, rename/softDelete publish DocumentChangedEvent
+    revision/     RevisionController, RevisionService(+impl) — owner-scoped; revisions carry base_version/source/session_id
+    user/         AuthController, AuthService/SessionService/UserService(+impl), LoginRateLimiter,
+                  UserValidator, entities (AppUser, UserSession, LoginAttempt), repositories
+    websocket/    DocumentWebSocketHandler, WsHandshakeInterceptor, WebSocketConfig, WsMessageCodec,
+                  envelope/payload records, WsTicketController/Service(+impl)/Repository, WsTicketCleanupJob
+    realtime/     SessionHandle/Registry, RoomRegistry, OutboundSender, DocumentBroadcaster, SessionReaper,
+                  TokenBucket, RealtimeMetricsSampler, InstanceCountGuard — holds no document business rules
+  src/main/resources/
+    db/changelog/ Liquibase changelogs (one file per changeset)
+  frontend/       index.html, login.html, styles.css, js/{api,app,draft,editor,login,syncClient}.js
+                  — packaged into the jar as static/ at build time (see smartdocs-app/pom.xml)
 ```
 
 ## Runbook
@@ -138,7 +157,7 @@ the end of Stage 0 (drops accounts, sessions, and document ownership
 entirely) with:
 
 ```bash
-mvn liquibase:rollback -Dliquibase.rollbackTag=stage-0
+mvn -pl smartdocs-app liquibase:rollback -Dliquibase.rollbackTag=stage-0
 ```
 
 Or to the end of Stage 1 (drops `ws_ticket` and the Stage 2 `document_revision`

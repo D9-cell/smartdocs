@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.deepon</groupId>
+    <artifactId>smartdocs-parent</artifactId>
+    <version>0.3.0-stage3</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>crdt-core</artifactId>
+  <name>crdt-core</name>
+  <description>YATA-style sequence CRDT. Pure Java: no Spring, no IO, no framework.</description>
+
+  <!--
+    This dependency list is deliberately almost empty, and adding to it needs
+    a real argument. The merge algorithm has to be testable without a server
+    and identical to the JavaScript port character for character; a framework
+    on this classpath is how that stops being true. Test scope only.
+  -->
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
