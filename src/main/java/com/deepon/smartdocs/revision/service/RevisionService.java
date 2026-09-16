@@ -17,8 +17,17 @@ import java.util.UUID;
  */
 public interface RevisionService {
 
+    /**
+     * @param baseVersion the version the writer believed it held. {@code null}
+     *                    when there is no honest value to record (document
+     *                    creation, or any Stage 1 call site that predates the
+     *                    column) — never invented.
+     * @param source      {@code "REST"} or {@code "WS"}.
+     * @param sessionId   the originating WebSocket session, or {@code null} for a REST-sourced revision.
+     */
     void recordRevision(UUID documentId, long version, String content, String contentHash,
-                         int contentSizeBytes, String actorId, Instant createdAt);
+                         int contentSizeBytes, String actorId, Instant createdAt,
+                         Long baseVersion, String source, UUID sessionId);
 
     List<RevisionSummaryProjection> listRevisions(Actor actor, UUID documentId);
 

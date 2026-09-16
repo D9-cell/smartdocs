@@ -136,6 +136,14 @@ const Api = {
     return body;
   },
 
+  // Single-use WebSocket handshake credential (design doc D7) — a separate,
+  // short-lived credential for the socket, not a replacement for the
+  // session cookie this call itself still runs under.
+  async requestWsTicket() {
+    const { body } = await handle(await fetch('/api/v1/ws-tickets', { method: 'POST' }));
+    return body; // { ticket, expiresAt, wsUrl }
+  },
+
   async getRevision(id, version) {
     const { body } = await handle(await fetch(`/api/v1/documents/${id}/revisions/${version}`));
     return body;

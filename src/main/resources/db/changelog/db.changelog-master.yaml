@@ -41,3 +41,21 @@ databaseChangeLog:
   - include:
       file: changes/014-tag-stage-1.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/015-revision-add-base-version.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/016-revision-add-source.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/017-revision-add-session-id.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/018-create-ws-ticket.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/019-ws-ticket-indexes.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/020-tag-stage-2.yaml
+      relativeToChangelogFile: true

@@ -89,6 +89,33 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                        @Param("actorId") String actorId,
                        @Param("now") Instant now);
 
+    /**
+     * Design doc D4: last write wins. Unconditional on {@code version} —
+     * still scoped by owner and not-deleted, so the 404-not-403 policy holds
+     * exactly as it does for every other write; zero rows affected here can
+     * only mean gone, soft-deleted, or not this caller's, never a version race.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Document d
+               SET d.content = :content,
+                   d.contentHash = :contentHash,
+                   d.contentSizeBytes = :contentSizeBytes,
+                   d.version = d.version + 1,
+                   d.updatedAt = :now,
+                   d.updatedBy = :actorId
+             WHERE d.id = :id
+               AND d.ownerId = :ownerId
+               AND d.deletedAt IS NULL
+            """)
+    int updateContentUnconditional(@Param("id") UUID id,
+                                    @Param("ownerId") UUID ownerId,
+                                    @Param("content") String content,
+                                    @Param("contentHash") String contentHash,
+                                    @Param("contentSizeBytes") int contentSizeBytes,
+                                    @Param("actorId") String actorId,
+                                    @Param("now") Instant now);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE Document d

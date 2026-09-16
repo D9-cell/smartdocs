@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 017-revision-add-session-id
+      author: statecore
+      logicalFilePath: db/changelog/changes/017-revision-add-session-id.yaml
+      comment: >
+        Ties a WebSocket-sourced revision back to the connection that
+        produced it. Null for REST-sourced revisions and every Stage 1 row.
+      changes:
+        - addColumn:
+            tableName: document_revision
+            columns:
+              - column:
+                  name: session_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            tableName: document_revision
+            columnName: session_id

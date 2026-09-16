@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015-revision-add-base-version
+      author: statecore
+      logicalFilePath: db/changelog/changes/015-revision-add-base-version.yaml
+      comment: >
+        The version the writer believed it held when it sent the write.
+        Stays nullable forever: Stage 1 rows have no honest value, and
+        backfilling version - 1 would invent one that never existed.
+      changes:
+        - addColumn:
+            tableName: document_revision
+            columns:
+              - column:
+                  name: base_version
+                  type: bigint
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            tableName: document_revision
+            columnName: base_version

@@ -49,12 +49,29 @@ public class DocumentRevision {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /**
+     * The version the writer believed it held (Stage 2). Stays null forever
+     * for Stage 1 rows and is never backfilled — inventing version - 1 for
+     * them would be a lie in an append-only history (design doc section 7.1).
+     */
+    @Column(name = "base_version")
+    private Long baseVersion;
+
+    /** {@code "REST"} or {@code "WS"} — separates socket writes from REST writes in every later query. */
+    @Column(name = "source", nullable = false, length = 8)
+    private String source;
+
+    /** Originating WebSocket session, null for REST-sourced revisions. */
+    @Column(name = "session_id")
+    private UUID sessionId;
+
     protected DocumentRevision() {
         // JPA
     }
 
     public DocumentRevision(UUID id, UUID documentId, long version, String content, String contentHash,
-                             int contentSizeBytes, String actorId, String actorType, Instant createdAt) {
+                             int contentSizeBytes, String actorId, String actorType, Instant createdAt,
+                             Long baseVersion, String source, UUID sessionId) {
         this.id = id;
         this.documentId = documentId;
         this.version = version;
@@ -64,6 +81,9 @@ public class DocumentRevision {
         this.actorId = actorId;
         this.actorType = actorType;
         this.createdAt = createdAt;
+        this.baseVersion = baseVersion;
+        this.source = source;
+        this.sessionId = sessionId;
     }
 
     public UUID getId() {
@@ -100,5 +120,17 @@ public class DocumentRevision {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Long getBaseVersion() {
+        return baseVersion;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public UUID getSessionId() {
+        return sessionId;
     }
 }

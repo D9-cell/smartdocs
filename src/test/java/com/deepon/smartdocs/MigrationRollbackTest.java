@@ -18,6 +18,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,6 +35,10 @@ class MigrationRollbackTest {
 
     private static final String CHANGELOG = "db/changelog/db.changelog-master.yaml";
 
+    private static final String[] STAGE_0_TABLES = {"document", "document_revision"};
+    private static final String[] STAGE_1_TABLES = {"document", "document_revision", "app_user", "user_session", "login_attempt"};
+    private static final String[] STAGE_2_TABLES = {"document", "document_revision", "app_user", "user_session", "login_attempt", "ws_ticket"};
+
     @Container
     @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES =
@@ -49,8 +54,7 @@ class MigrationRollbackTest {
             Liquibase liquibase = new Liquibase(CHANGELOG, new ClassLoaderResourceAccessor(), database);
 
             liquibase.update(new Contexts(), new LabelExpression());
-            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(
-                    "document", "document_revision", "app_user", "user_session", "login_attempt");
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(STAGE_2_TABLES);
 
             // `rollback <tag>` reverts everything deployed *after* the tag.
             // Changeset 004 (the tagDatabase changeset itself) is the last
@@ -84,16 +88,55 @@ class MigrationRollbackTest {
             Liquibase liquibase = new Liquibase(CHANGELOG, new ClassLoaderResourceAccessor(), database);
 
             liquibase.update(new Contexts(), new LabelExpression());
-            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(
-                    "document", "document_revision", "app_user", "user_session", "login_attempt");
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(STAGE_2_TABLES);
 
             liquibase.rollback("stage-0", new Contexts(), new LabelExpression());
-            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder("document", "document_revision");
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(STAGE_0_TABLES);
 
             liquibase.update(new Contexts(), new LabelExpression());
-            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(
-                    "document", "document_revision", "app_user", "user_session", "login_attempt");
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(STAGE_2_TABLES);
         }
+    }
+
+    /**
+     * Stage 2's own version of the same recipe (design doc section 8, build
+     * order step 1): update, rollback to stage-1 (undoing exactly the
+     * base_version/source/session_id columns and ws_ticket), update again.
+     */
+    @Test
+    void rollbackToStage1LeavesOnlyStage1ObjectsThenUpdateAgainRestoresStage2() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+
+            Database database = DatabaseFactory.getInstance()
+                    .findCorrectDatabaseImplementation(new JdbcConnection(connection));
+            Liquibase liquibase = new Liquibase(CHANGELOG, new ClassLoaderResourceAccessor(), database);
+
+            liquibase.update(new Contexts(), new LabelExpression());
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(STAGE_2_TABLES);
+
+            liquibase.rollback("stage-1", new Contexts(), new LabelExpression());
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(STAGE_1_TABLES);
+            assertThat(revisionColumnNames(connection)).doesNotContain("base_version", "source", "session_id");
+
+            liquibase.update(new Contexts(), new LabelExpression());
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(STAGE_2_TABLES);
+            assertThat(revisionColumnNames(connection)).contains("base_version", "source", "session_id");
+        }
+    }
+
+    private static List<String> revisionColumnNames(Connection connection) throws Exception {
+        List<String> columns = new java.util.ArrayList<>();
+        try (Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery("""
+                     SELECT column_name FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'document_revision'
+                     """)) {
+            while (rs.next()) {
+                columns.add(rs.getString(1));
+            }
+        }
+        return columns;
     }
 
     /** Every table in the public schema except Liquibase's own bookkeeping tables. */

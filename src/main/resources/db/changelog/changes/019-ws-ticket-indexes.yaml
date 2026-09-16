@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 019-ws-ticket-indexes
+      author: statecore
+      logicalFilePath: db/changelog/changes/019-ws-ticket-indexes.yaml
+      comment: >
+        Unique on token_hash — the only lookup path a redeem uses. Partial
+        index on expires_at where used_at is null backs the cleanup job,
+        which only ever needs to see unredeemed tickets.
+      changes:
+        - createIndex:
+            indexName: ws_ticket_token_uk
+            tableName: ws_ticket
+            unique: true
+            columns:
+              - column:
+                  name: token_hash
+        - sql:
+            sql: CREATE INDEX ws_ticket_expiry_idx ON ws_ticket (expires_at) WHERE used_at IS NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS ws_ticket_expiry_idx
+        - dropIndex:
+            indexName: ws_ticket_token_uk
+            tableName: ws_ticket

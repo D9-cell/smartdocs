@@ -45,6 +45,35 @@ smartdocs:
     # invalidates historical ip_hash correlation across the boundary, which
     # is the point (design doc section 8.2).
     ip-hash-salt: ${SMARTDOCS_IP_HASH_SALT:dev-only-ip-hash-salt-change-me}
+  websocket:
+    ticket-ttl-seconds: 30
+    max-connections-per-user: 10
+    # 1 MiB content cap plus room for envelope/JSON overhead.
+    max-text-message-bytes: 1100000
+    idle-timeout-seconds: 90
+    # No wildcard, ever — exact origins only (design doc section 5.2/9).
+    # Comma-separated so it stays a single env var to override.
+    allowed-origins: ${SMARTDOCS_WS_ALLOWED_ORIGINS:http://localhost:8080}
+    # A missing Origin header is rejected in production (edge case 4) —
+    # true only for local wscat/dev-tool testing, same shape as cookie-secure.
+    allow-missing-origin: ${SMARTDOCS_WS_ALLOW_MISSING_ORIGIN:false}
+    write-executor:
+      core-size: 8
+      queue-capacity: 200
+    outbound-queue-capacity: 32
+    outbound-queue-drop-close-threshold: 64
+    ticket-cleanup-interval-ms: 600000
+    rate-limit:
+      per-second: 10
+      burst: 20
+    heartbeat:
+      interval-seconds: 25
+      miss-limit: 2
+  instance:
+    # Stage 2's room registry is in-memory on one node — a second instance
+    # silently splits rooms instead of failing loudly. Logged as a startup
+    # warning above 1 until Stage 9 moves fanout onto a log.
+    count: ${SMARTDOCS_INSTANCE_COUNT:1}
 
 management:
   endpoints:

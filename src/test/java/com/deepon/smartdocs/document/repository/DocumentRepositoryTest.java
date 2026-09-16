@@ -111,10 +111,10 @@ class DocumentRepositoryTest extends AbstractPostgresTest {
         Document document = persistDocument(1);
         UUID documentId = document.getId();
         revisionRepository.saveAndFlush(new DocumentRevision(UUID.randomUUID(), documentId, 1L,
-                "hello", "hash1", 5, "anonymous", "HUMAN", Instant.now()));
+                "hello", "hash1", 5, "anonymous", "HUMAN", Instant.now(), null, "REST", null));
 
         assertThatThrownBy(() -> revisionRepository.saveAndFlush(new DocumentRevision(UUID.randomUUID(), documentId, 1L,
-                "hello again", "hash3", 11, "anonymous", "HUMAN", Instant.now())))
+                "hello again", "hash3", 11, "anonymous", "HUMAN", Instant.now(), null, "REST", null)))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 

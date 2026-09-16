@@ -1,0 +1,59 @@
+databaseChangeLog:
+  - changeSet:
+      id: 018-create-ws-ticket
+      author: statecore
+      logicalFilePath: db/changelog/changes/018-create-ws-ticket.yaml
+      comment: >
+        Single-use WebSocket handshake credential. Only the SHA-256 hash of
+        the token is stored — a dump of this table grants nothing, same
+        reasoning as user_session.token_hash.
+      changes:
+        - createTable:
+            tableName: ws_ticket
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: token_hash
+                  type: char(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    references: app_user(id)
+                    foreignKeyName: ws_ticket_user_fk
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: used_at
+                  type: timestamptz
+                  constraints:
+                    nullable: true
+              - column:
+                  # varchar, not native inet: Hibernate has no first-class
+                  # JDBC binding for inet, and this column is written once
+                  # by application code and never queried with an inet
+                  # operator, so the native type buys nothing here.
+                  name: client_ip
+                  type: varchar(45)
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropTable:
+            tableName: ws_ticket

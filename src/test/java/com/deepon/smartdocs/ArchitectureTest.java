@@ -55,6 +55,15 @@ class ArchitectureTest {
     }
 
     @Test
+    void servicesDoNotDependOnWebSocketTypes() {
+        ArchRule rule = noClasses()
+                .that().resideInAPackage("..service..")
+                .should().dependOnClassesThat().resideInAPackage("org.springframework.web.socket..")
+                .because("DocumentService stays free of transport types (design doc D3) — the WebSocket handler parses, authorizes, and delegates, same as the REST controller");
+        rule.check(classes);
+    }
+
+    @Test
     void controllersDoNotDependOnRepositories() {
         ArchRule rule = noClasses()
                 .that().resideInAPackage("..controller..")

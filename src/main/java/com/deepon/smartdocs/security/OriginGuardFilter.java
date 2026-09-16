@@ -50,21 +50,8 @@ public class OriginGuardFilter extends HttpFilter {
             return false;
         }
 
-        String origin = request.getHeader("Origin");
-        if (origin == null || origin.isBlank()) {
-            return true;
-        }
-
-        String expected = expectedOrigin(request);
-        return expected.equalsIgnoreCase(origin.trim());
-    }
-
-    private String expectedOrigin(HttpServletRequest request) {
-        String scheme = request.getScheme();
-        String host = request.getServerName();
-        int port = request.getServerPort();
-        boolean defaultPort = ("http".equals(scheme) && port == 80) || ("https".equals(scheme) && port == 443);
-        return defaultPort ? scheme + "://" + host : scheme + "://" + host + ":" + port;
+        String expected = OriginMatcher.expectedOrigin(request.getScheme(), request.getServerName(), request.getServerPort());
+        return OriginMatcher.matches(expected, request.getHeader("Origin"));
     }
 
     private void writeRejected(HttpServletResponse response) throws IOException {

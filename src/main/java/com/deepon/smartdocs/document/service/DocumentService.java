@@ -28,6 +28,21 @@ public interface DocumentService {
 
     Document updateContent(Actor actor, UUID id, long expectedVersion, String content, String clientHash);
 
+    record ApplyResult(long version, String contentHash, boolean changed, boolean overwrote) {
+    }
+
+    /**
+     * Last write wins (design doc D4): unconditional on version, unlike
+     * {@link #updateContent}. {@code baseVersion} is recorded, never
+     * enforced — when it doesn't match the version immediately before this
+     * write, {@link ApplyResult#overwrote()} is true and the loss is what
+     * the revision row's {@code base_version} column exists to measure.
+     *
+     * @param sessionId  the originating WebSocket connection, persisted as {@code document_revision.session_id}.
+     * @param originMsgId the client's own envelope {@code msgId}, carried through to the {@code doc.applied} ack.
+     */
+    ApplyResult applyLastWriteWins(Actor actor, UUID id, String content, long baseVersion, UUID sessionId, String originMsgId);
+
     Document rename(Actor actor, UUID id, long expectedVersion, String rawTitle);
 
     void softDelete(Actor actor, UUID id, long expectedVersion);

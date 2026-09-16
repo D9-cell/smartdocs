@@ -30,9 +30,11 @@ public class RevisionServiceImpl implements RevisionService {
     @Override
     @Transactional
     public void recordRevision(UUID documentId, long version, String content, String contentHash,
-                                int contentSizeBytes, String actorId, Instant createdAt) {
+                                int contentSizeBytes, String actorId, Instant createdAt,
+                                Long baseVersion, String source, UUID sessionId) {
         revisionRepository.save(new DocumentRevision(UUID.randomUUID(), documentId, version,
-                content, contentHash, contentSizeBytes, actorId, ACTOR_TYPE_HUMAN, createdAt));
+                content, contentHash, contentSizeBytes, actorId, ACTOR_TYPE_HUMAN, createdAt,
+                baseVersion, source, sessionId));
     }
 
     @Override

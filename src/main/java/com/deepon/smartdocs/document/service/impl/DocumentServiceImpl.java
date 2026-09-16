@@ -12,10 +12,12 @@ import com.deepon.smartdocs.document.exception.VersionMismatchException;
 import com.deepon.smartdocs.document.repository.DocumentRepository;
 import com.deepon.smartdocs.document.repository.DocumentSummaryProjection;
 import com.deepon.smartdocs.document.service.DocumentService;
+import com.deepon.smartdocs.realtime.event.DocumentChangedEvent;
 import com.deepon.smartdocs.revision.service.RevisionService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,11 +36,13 @@ public class DocumentServiceImpl implements DocumentService {
     private final ContentHasher contentHasher;
     private final CursorCodec cursorCodec;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
     private final int maxDocumentsPerUser;
 
     private final Counter saveTotal;
     private final Counter saveConflictTotal;
     private final Counter saveNoopTotal;
+    private final Counter lwwOverwritesTotal;
 
     public DocumentServiceImpl(DocumentRepository documentRepository,
                                 RevisionService revisionService,
@@ -46,6 +50,7 @@ public class DocumentServiceImpl implements DocumentService {
                                 ContentHasher contentHasher,
                                 CursorCodec cursorCodec,
                                 Clock clock,
+                                ApplicationEventPublisher eventPublisher,
                                 MeterRegistry meterRegistry,
                                 @Value("${smartdocs.document.max-per-user:500}") int maxDocumentsPerUser) {
         this.documentRepository = documentRepository;
@@ -54,10 +59,13 @@ public class DocumentServiceImpl implements DocumentService {
         this.contentHasher = contentHasher;
         this.cursorCodec = cursorCodec;
         this.clock = clock;
+        this.eventPublisher = eventPublisher;
         this.maxDocumentsPerUser = maxDocumentsPerUser;
         this.saveTotal = meterRegistry.counter("document_save_total");
         this.saveConflictTotal = meterRegistry.counter("document_save_conflict_total");
         this.saveNoopTotal = meterRegistry.counter("document_save_noop_total");
+        // design doc section 9/12: the measured argument for Stage 3.
+        this.lwwOverwritesTotal = meterRegistry.counter("lww_overwrites_total");
     }
 
     @Override
@@ -81,7 +89,8 @@ public class DocumentServiceImpl implements DocumentService {
         Document document = new Document(UUID.randomUUID(), actor.userId(), title, content, hash, sizeBytes,
                 1L, actor.actorId(), actor.actorId(), now, now);
         documentRepository.save(document);
-        revisionService.recordRevision(document.getId(), 1L, content, hash, sizeBytes, actor.actorId(), now);
+        // No prior version exists for a brand-new document — null, not 0.
+        revisionService.recordRevision(document.getId(), 1L, content, hash, sizeBytes, actor.actorId(), now, null, "REST", null);
         return document;
     }
 
@@ -152,8 +161,64 @@ public class DocumentServiceImpl implements DocumentService {
 
         Document updated = documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .orElseThrow(() -> new DocumentNotFoundException(id));
-        revisionService.recordRevision(id, updated.getVersion(), content, hash, sizeBytes, actor.actorId(), now);
+        // The conditional UPDATE's WHERE clause already guarantees
+        // expectedVersion == updated.getVersion() - 1 here, so this is
+        // always an honest value, unlike the WS path where it can differ.
+        revisionService.recordRevision(id, updated.getVersion(), content, hash, sizeBytes, actor.actorId(), now,
+                expectedVersion, "REST", null);
         return updated;
+    }
+
+    /**
+     * design doc D1, D4, D5: unconditional update, no-op short-circuit
+     * (what stops two tabs echoing each other forever), and the event
+     * published inside this transaction so {@code DocumentBroadcaster}
+     * (an {@code AFTER_COMMIT} listener) never fires for a rolled-back write.
+     */
+    @Override
+    @Transactional
+    public ApplyResult applyLastWriteWins(Actor actor, UUID id, String content, long baseVersion,
+                                           UUID sessionId, String originMsgId) {
+        contentValidator.validateContent(content);
+        String hash = contentHasher.hash(content);
+
+        Document current = documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
+                .orElseThrow(() -> new DocumentNotFoundException(id));
+
+        if (hash.equals(current.getContentHash())) {
+            // Still published: the ack (changed: false) is what tells the
+            // client its write was a no-op. DocumentBroadcaster stops short
+            // of broadcasting to anyone else once it sees changed is false —
+            // this is what breaks an echo loop between two tabs (D1).
+            eventPublisher.publishEvent(new DocumentChangedEvent(
+                    DocumentChangedEvent.ChangeType.CONTENT, id, current.getVersion(), content, current.getContentHash(),
+                    null, actor.actorId(), actor.type().name(), sessionId, originMsgId, false, false));
+            return new ApplyResult(current.getVersion(), current.getContentHash(), false, false);
+        }
+
+        int sizeBytes = contentHasher.utf8SizeBytes(content);
+        Instant now = clock.instant();
+        int rows = documentRepository.updateContentUnconditional(id, actor.userId(), content, hash, sizeBytes, actor.actorId(), now);
+        if (rows == 0) {
+            // Gone, soft-deleted, or not this caller's between the read
+            // above and this write — never a version race, there is none.
+            throw new DocumentNotFoundException(id);
+        }
+
+        Document updated = documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
+                .orElseThrow(() -> new DocumentNotFoundException(id));
+        boolean overwrote = baseVersion != updated.getVersion() - 1;
+        if (overwrote) {
+            lwwOverwritesTotal.increment();
+        }
+        revisionService.recordRevision(id, updated.getVersion(), content, hash, sizeBytes, actor.actorId(), now,
+                baseVersion, "WS", sessionId);
+
+        eventPublisher.publishEvent(new DocumentChangedEvent(
+                DocumentChangedEvent.ChangeType.CONTENT, id, updated.getVersion(), content, hash, null,
+                actor.actorId(), actor.type().name(), sessionId, originMsgId, true, overwrote));
+
+        return new ApplyResult(updated.getVersion(), hash, true, overwrote);
     }
 
     @Override
@@ -173,8 +238,13 @@ public class DocumentServiceImpl implements DocumentService {
             throw resolveRaceAfterFailedWrite(actor, id, expectedVersion);
         }
 
-        return documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
+        Document updated = documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .orElseThrow(() -> new DocumentNotFoundException(id));
+        // REST still renames rows — open tabs need telling (design doc section 6.5).
+        eventPublisher.publishEvent(new DocumentChangedEvent(
+                DocumentChangedEvent.ChangeType.RENAMED, id, updated.getVersion(), null, null, updated.getTitle(),
+                actor.actorId(), actor.type().name(), null, null, true, false));
+        return updated;
     }
 
     @Override
@@ -191,6 +261,9 @@ public class DocumentServiceImpl implements DocumentService {
         if (rows == 0) {
             throw resolveRaceAfterFailedWrite(actor, id, expectedVersion);
         }
+        eventPublisher.publishEvent(new DocumentChangedEvent(
+                DocumentChangedEvent.ChangeType.DELETED, id, expectedVersion + 1, null, null, null,
+                actor.actorId(), actor.type().name(), null, null, true, false));
     }
 
     /**
