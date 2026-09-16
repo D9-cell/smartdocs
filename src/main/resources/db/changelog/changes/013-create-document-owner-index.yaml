@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013-create-document-owner-index
+      author: statecore
+      logicalFilePath: db/changelog/changes/013-create-document-owner-index.yaml
+      runInTransaction: false
+      comment: >
+        CONCURRENTLY so this never blocks writes on a production-sized table.
+        Liquibase refuses CREATE INDEX CONCURRENTLY inside a transaction —
+        runInTransaction: false is required, not optional, for this changeset.
+      changes:
+        - sql:
+            sql: CREATE INDEX CONCURRENTLY document_owner_list_idx ON document (owner_id, updated_at DESC, id DESC) WHERE deleted_at IS NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX CONCURRENTLY IF EXISTS document_owner_list_idx

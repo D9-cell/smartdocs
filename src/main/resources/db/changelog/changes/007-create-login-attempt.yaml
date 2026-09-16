@@ -1,0 +1,67 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-create-login-attempt
+      author: statecore
+      logicalFilePath: db/changelog/changes/007-create-login-attempt.yaml
+      changes:
+        - createTable:
+            tableName: login_attempt
+            columns:
+              - column:
+                  name: id
+                  type: bigserial
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: email_normalized
+                  type: text
+                  constraints:
+                    nullable: true
+              - column:
+                  name: ip_hash
+                  type: char(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: outcome
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: ALTER TABLE login_attempt ADD CONSTRAINT login_attempt_outcome_chk CHECK (outcome IN ('SUCCESS','BAD_PASSWORD','UNKNOWN_EMAIL','LOCKED','DISABLED'))
+        - createIndex:
+            indexName: login_attempt_email_time_idx
+            tableName: login_attempt
+            columns:
+              - column:
+                  name: email_normalized
+              - column:
+                  name: created_at
+                  descending: true
+        - createIndex:
+            indexName: login_attempt_ip_time_idx
+            tableName: login_attempt
+            columns:
+              - column:
+                  name: ip_hash
+              - column:
+                  name: created_at
+                  descending: true
+      rollback:
+        - dropIndex:
+            indexName: login_attempt_ip_time_idx
+            tableName: login_attempt
+        - dropIndex:
+            indexName: login_attempt_email_time_idx
+            tableName: login_attempt
+        - sql:
+            sql: ALTER TABLE login_attempt DROP CONSTRAINT IF EXISTS login_attempt_outcome_chk
+        - dropTable:
+            tableName: login_attempt

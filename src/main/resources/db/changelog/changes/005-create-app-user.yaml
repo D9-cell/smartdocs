@@ -1,0 +1,88 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-create-app-user
+      author: statecore
+      logicalFilePath: db/changelog/changes/005-create-app-user.yaml
+      changes:
+        - createTable:
+            tableName: app_user
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: email
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: password_hash
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: text
+                  defaultValue: ACTIVE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: failed_login_count
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: locked_until
+                  type: timestamptz
+                  constraints:
+                    nullable: true
+              - column:
+                  name: password_changed_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: deleted_at
+                  type: timestamptz
+                  constraints:
+                    nullable: true
+        - sql:
+            sql: ALTER TABLE app_user ADD CONSTRAINT app_user_email_len CHECK (char_length(email) BETWEEN 3 AND 254)
+        - sql:
+            sql: ALTER TABLE app_user ADD CONSTRAINT app_user_name_len CHECK (char_length(display_name) BETWEEN 1 AND 80)
+        - sql:
+            sql: ALTER TABLE app_user ADD CONSTRAINT app_user_status_chk CHECK (status IN ('ACTIVE','LOCKED','DISABLED'))
+        - sql:
+            sql: CREATE UNIQUE INDEX app_user_email_uk ON app_user (lower(email)) WHERE deleted_at IS NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS app_user_email_uk
+        - sql:
+            sql: ALTER TABLE app_user DROP CONSTRAINT IF EXISTS app_user_status_chk
+        - sql:
+            sql: ALTER TABLE app_user DROP CONSTRAINT IF EXISTS app_user_name_len
+        - sql:
+            sql: ALTER TABLE app_user DROP CONSTRAINT IF EXISTS app_user_email_len
+        - dropTable:
+            tableName: app_user

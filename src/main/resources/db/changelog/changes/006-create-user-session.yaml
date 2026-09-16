@@ -1,0 +1,90 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-create-user-session
+      author: statecore
+      logicalFilePath: db/changelog/changes/006-create-user-session.yaml
+      changes:
+        - createTable:
+            tableName: user_session
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    references: app_user(id)
+                    foreignKeyName: user_session_user_fk
+              - column:
+                  name: token_hash
+                  type: char(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_seen_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: idle_expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: absolute_expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: revoked_at
+                  type: timestamptz
+                  constraints:
+                    nullable: true
+              - column:
+                  name: revoked_reason
+                  type: text
+                  constraints:
+                    nullable: true
+              - column:
+                  name: user_agent
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: ip_hash
+                  type: char(64)
+                  constraints:
+                    nullable: true
+        - createIndex:
+            indexName: user_session_token_uk
+            tableName: user_session
+            unique: true
+            columns:
+              - column:
+                  name: token_hash
+        - sql:
+            sql: CREATE INDEX user_session_user_active_idx ON user_session (user_id) WHERE revoked_at IS NULL
+        - sql:
+            sql: CREATE INDEX user_session_expiry_idx ON user_session (absolute_expires_at) WHERE revoked_at IS NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS user_session_expiry_idx
+        - sql:
+            sql: DROP INDEX IF EXISTS user_session_user_active_idx
+        - dropIndex:
+            indexName: user_session_token_uk
+            tableName: user_session
+        - dropTable:
+            tableName: user_session

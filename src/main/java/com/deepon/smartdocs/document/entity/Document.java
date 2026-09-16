@@ -23,6 +23,9 @@ public class Document {
     @Id
     private UUID id;
 
+    @Column(name = "owner_id", nullable = false)
+    private UUID ownerId;
+
     @Column(name = "title", nullable = false, length = 255)
     private String title;
 
@@ -58,9 +61,10 @@ public class Document {
         // JPA
     }
 
-    public Document(UUID id, String title, String content, String contentHash, int contentSizeBytes,
+    public Document(UUID id, UUID ownerId, String title, String content, String contentHash, int contentSizeBytes,
                      long version, String createdBy, String updatedBy, Instant createdAt, Instant updatedAt) {
         this.id = id;
+        this.ownerId = ownerId;
         this.title = title;
         this.content = content;
         this.contentHash = contentHash;
@@ -74,6 +78,10 @@ public class Document {
 
     public UUID getId() {
         return id;
+    }
+
+    public UUID getOwnerId() {
+        return ownerId;
     }
 
     public String getTitle() {

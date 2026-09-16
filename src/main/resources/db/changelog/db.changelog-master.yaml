@@ -11,3 +11,33 @@ databaseChangeLog:
   - include:
       file: changes/004-tag-stage-0.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/005-create-app-user.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/006-create-user-session.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/007-create-login-attempt.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/008-add-document-owner-id-nullable.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/009-seed-system-user.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/010-backfill-document-owner-id.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/011-document-owner-id-not-null.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/012-add-document-owner-fk.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/013-create-document-owner-index.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/014-tag-stage-1.yaml
+      relativeToChangelogFile: true

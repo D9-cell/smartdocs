@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartDocs — Sign in</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { display: block; }
+    #auth-wrap {
+      max-width: 360px;
+      margin: 10vh auto;
+      padding: 0 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #auth-wrap h1 { font-size: 18px; margin: 0 0 4px; }
+    #auth-wrap label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
+    #auth-wrap input {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--fg);
+      font-size: 14px;
+    }
+    #auth-wrap .field { margin-bottom: 10px; }
+    #auth-wrap button[type="submit"] {
+      padding: 9px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    #auth-error { color: var(--danger); font-size: 13px; min-height: 1.2em; }
+    #auth-toggle { font-size: 13px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0; text-align: left; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="auth-wrap">
+    <h1 id="auth-title">Sign in</h1>
+    <form id="auth-form">
+      <div class="field" id="display-name-field" hidden>
+        <label for="displayName">Name</label>
+        <input id="displayName" name="displayName" type="text" autocomplete="name">
+      </div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <div id="auth-error" role="alert"></div>
+      <button type="submit" id="auth-submit">Sign in</button>
+    </form>
+    <button type="button" id="auth-toggle">Need an account? Register instead</button>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    (function () {
+      const form = document.getElementById('auth-form');
+      const title = document.getElementById('auth-title');
+      const submitBtn = document.getElementById('auth-submit');
+      const toggleBtn = document.getElementById('auth-toggle');
+      const errorEl = document.getElementById('auth-error');
+      const displayNameField = document.getElementById('display-name-field');
+      const displayNameInput = document.getElementById('displayName');
+      let mode = 'login';
+
+      function setMode(next) {
+        mode = next;
+        const isRegister = mode === 'register';
+        title.textContent = isRegister ? 'Create an account' : 'Sign in';
+        submitBtn.textContent = isRegister ? 'Register' : 'Sign in';
+        toggleBtn.textContent = isRegister ? 'Already have an account? Sign in instead' : 'Need an account? Register instead';
+        displayNameField.hidden = !isRegister;
+        displayNameInput.required = isRegister;
+        errorEl.textContent = '';
+      }
+
+      toggleBtn.addEventListener('click', () => setMode(mode === 'login' ? 'register' : 'login'));
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errorEl.textContent = '';
+        submitBtn.disabled = true;
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        try {
+          if (mode === 'register') {
+            await Api.register(email, password, displayNameInput.value);
+          } else {
+            await Api.login(email, password);
+          }
+          window.location.href = '/';
+        } catch (err) {
+          if (err instanceof Api.ApiError) {
+            if (err.status === 423) {
+              errorEl.textContent = 'Account temporarily locked after too many failed attempts. Try again later.';
+            } else if (err.status === 429) {
+              errorEl.textContent = 'Too many attempts. Try again shortly.';
+            } else if (err.code === 'EMAIL_TAKEN') {
+              errorEl.textContent = 'An account with that email already exists.';
+            } else if (err.code === 'VALIDATION_FAILED' && err.body && Array.isArray(err.body.errors)) {
+              errorEl.textContent = err.body.errors.map((v) => v.message).join(' ');
+            } else {
+              errorEl.textContent = 'Invalid email or password.';
+            }
+          } else {
+            errorEl.textContent = 'Something went wrong. Try again.';
+          }
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

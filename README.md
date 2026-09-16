@@ -1,9 +1,10 @@
-# SmartDocs — Stage 0
+# SmartDocs — Stage 1
 
-A single-user, durably-persisted plain-text editor. Java 21, Spring Boot 3,
-PostgreSQL 16 via Liquibase, vanilla-JS frontend. Full design in
-[`stage-0-single-user-editor-design.md`](./stage-0-single-user-editor-design.md);
-this file is the "how do I actually run it" complement.
+Every document now belongs to a signed-in user. Java 21, Spring Boot 3,
+PostgreSQL 16 via Liquibase, vanilla-JS frontend, server-side sessions.
+Full design in the Stage 1 design doc ("Stage 1: Document Backend with
+Identity and Ownership"); this file is the "how do I actually run it"
+complement. Stage 0's single-user editor is still the base this builds on.
 
 ## Prerequisites
 
@@ -15,7 +16,7 @@ this file is the "how do I actually run it" complement.
 
 ```bash
 docker compose up -d          # starts Postgres 16 on localhost:5433
-DB_PORT=5433 mvn spring-boot:run   # boots the app on :8080, migrating the schema at startup
+DB_PORT=5433 SMARTDOCS_COOKIE_SECURE=false mvn spring-boot:run   # boots the app on :8080, migrating the schema at startup
 ```
 
 The compose file maps the container's Postgres to host port **5433**, not
@@ -24,8 +25,15 @@ The compose file maps the container's Postgres to host port **5433**, not
 app to match; `application.yaml`'s default (`DB_PORT:5432`) is for
 environments where nothing else already owns 5432.
 
-Open `http://localhost:8080`. The API lives under `/api/v1/documents`
-(see the design doc, section 6, for the full contract). Static assets and
+`SMARTDOCS_COOKIE_SECURE=false` is needed for local **plain http** only — a
+`Secure` cookie is silently dropped by real browsers over http, so without
+this the session cookie the login flow sets never actually sticks. Leave it
+unset (defaults to `true`) anywhere the app is served over https.
+
+Open `http://localhost:8080` — you'll land on `/login.html` first; register
+an account, then the editor at `/` works as before, now scoped to your own
+documents. The API lives under `/api/v1/documents` and `/api/v1/auth` (see
+the design doc, sections 6–7, for the full contract). Static assets and
 `index.html` are served from the same origin — no CORS to configure.
 
 To stop and wipe local data: `docker compose down -v`.
@@ -44,38 +52,34 @@ running. The whole suite, including the two 100-iteration-class tests
 rollback proof, and the full-restart persistence proof, takes about a
 minute.
 
-Test layers, matching design doc section 9:
+Test layers, matching the design docs' testing-strategy sections:
 
 | Class | Layer | What it proves |
 | --- | --- | --- |
-| `ContentValidatorTest`, `ContentHasherTest`, `EtagSupportTest` | Unit | Every row of the section 8.1 edge-case table; hash determinism; header parsing |
-| `DocumentRepositoryTest` | `@DataJpaTest` + real Postgres | Conditional-update row counts, unique constraint, soft-delete exclusion |
-| `DocumentServiceTest` | Service, real DB | Every `DocumentService` method and error branch |
-| `DocumentControllerWebMvcTest` | `@WebMvcTest`, mocked service | Every HTTP status code in the section 6.7 catalogue |
+| `ContentValidatorTest`, `ContentHasherTest`, `EtagSupportTest`, `CursorCodecTest`, `UserValidatorTest`, `PasswordHasherTest`, `LoginRateLimiterTest` | Unit | Edge-case tables; hash determinism; header parsing; pagination cursors; auth field validation |
+| `DocumentRepositoryTest` | `@DataJpaTest` + real Postgres | Conditional-update row counts, unique constraint, soft-delete exclusion, owner scoping, keyset pagination |
+| `DocumentServiceTest`, `RevisionServiceTest` | Service, real DB | Every method and error branch, including cross-owner 404s |
+| `AuthServiceTest`, `SessionServiceTest` | Service, real DB | Register/login/lockout/self-heal/logout/password-change; session create/resolve/renew/revoke/rotate/cap |
+| `DocumentControllerWebMvcTest`, `AuthControllerWebMvcTest` | `@WebMvcTest`, mocked service | Every HTTP status code in the error catalogue, cookie headers |
 | `IntegrationSaveReloadTest` | `@SpringBootTest`, real DB | Full save + restart persistence with identical SHA-256; two stateless instances against one database |
-| `ConcurrencySaveTest` | `@SpringBootTest`, real DB, threads | 100 repetitions of the two-thread race in section 9: exactly one 200, one 412 |
+| `ConcurrencySaveTest` | `@SpringBootTest`, real DB, threads | 100 repetitions of the two-thread race: exactly one 200, one 412 |
 | `MigrationRollbackTest` | Liquibase directly, real DB | `update` then a full rollback leaves an empty schema |
-
-Coverage on the two classes the design doc calls out by name (section 12):
-`DocumentService` 97.5% lines, `ContentValidator` 100% lines (see
-`target/site/jacoco/index.html` after `mvn test`).
+| `ArchitectureTest` | ArchUnit | No unscoped `findById` on `DocumentRepository`; services don't import `jakarta.servlet`; controllers don't touch repositories directly |
 
 ## Project layout
 
 ```
 src/main/java/com/deepon/smartdocs/
-  config/       Clock, Jackson, request-size-limiting filter, request-id filter
-  controller/   DocumentController (routing lives on its @RequestMapping), EtagSupport
-  dto/          Request and response records — the wire contract
-  service/      DocumentService (interface), ContentHasher
-  service/impl/ DocumentServiceImpl — the business rules
-  validator/    ContentValidator
-  repository/   Spring Data repositories and query projections
-  entity/       JPA entities
-  exception/    Typed domain exceptions + GlobalExceptionHandler (RFC 9457 mapping)
+  common/       Actor, ActorArgumentResolver, IdGenerator (UUIDv7), Sha256, shared exceptions
+  config/       Clock, Jackson, request-size-limiting filter, request-id filter, WebConfig
+  security/     OriginGuardFilter, SessionAuthFilter, PasswordHasher, IpHasher, CookieSupport
+  document/     DocumentController, DocumentService(+impl), DocumentRepository, CursorCodec — now owner-scoped
+  revision/     RevisionController, RevisionService(+impl) — now owner-scoped
+  user/         AuthController, AuthService/SessionService/UserService(+impl), LoginRateLimiter,
+                UserValidator, entities (AppUser, UserSession, LoginAttempt), repositories
 src/main/resources/
-  db/changelog/   Liquibase changelogs (one file per changeset, see section 7.6)
-frontend/         index.html, styles.css, js/{api,draft,editor}.js
+  db/changelog/   Liquibase changelogs (one file per changeset)
+frontend/         index.html, login.html, styles.css, js/{api,draft,editor}.js
                   — packaged into the jar as static/ at build time (see pom.xml)
 ```
 
@@ -98,8 +102,11 @@ normally with nothing left to apply. No manual intervention needed; this is
 covered by `IntegrationSaveReloadTest`.
 
 **Rolling back a stage boundary.** Every changeset is tagged; roll back to
-the end of Stage 0 with:
+the end of Stage 0 (drops accounts, sessions, and document ownership
+entirely) with:
 
 ```bash
 mvn liquibase:rollback -Dliquibase.rollbackTag=stage-0
 ```
+
+Or to the end of Stage 1 once a Stage 2 exists: `-Dliquibase.rollbackTag=stage-1`.

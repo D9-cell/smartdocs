@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-add-document-owner-fk
+      author: statecore
+      logicalFilePath: db/changelog/changes/012-add-document-owner-fk.yaml
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: document
+            baseColumnNames: owner_id
+            constraintName: document_owner_fk
+            referencedTableName: app_user
+            referencedColumnNames: id
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: document
+            constraintName: document_owner_fk

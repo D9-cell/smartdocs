@@ -25,7 +25,7 @@ public class RequestSizeLimitingFilter extends HttpFilter {
 
     private final long maxBodyBytes;
 
-    public RequestSizeLimitingFilter(@Value("${smartdocs.request.max-body-bytes:4194304}") long maxBodyBytes) {
+    public RequestSizeLimitingFilter(@Value("${smartdocs.request.max-body-bytes:2097152}") long maxBodyBytes) {
         this.maxBodyBytes = maxBodyBytes;
     }
 

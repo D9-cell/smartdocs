@@ -11,6 +11,10 @@
     <h1>SmartDocs</h1>
     <button id="new-doc-btn" type="button">+ New document</button>
     <ul id="doc-list"></ul>
+    <div id="account-bar">
+      <span id="account-email"></span>
+      <button id="logout-btn" type="button">Log out</button>
+    </div>
   </aside>
 
   <main>
@@ -81,13 +85,23 @@
       const statusEl = document.getElementById('status');
       const conflictPanel = document.getElementById('conflict-panel');
       const recoveryPanel = document.getElementById('recovery-panel');
+      const accountEmailEl = document.getElementById('account-email');
+      const logoutBtn = document.getElementById('logout-btn');
 
       let activeEditor = null;
       let activeId = null;
       let renameInFlight = false;
 
+      logoutBtn.addEventListener('click', async () => {
+        try {
+          await Api.logout();
+        } finally {
+          window.location.href = '/login.html';
+        }
+      });
+
       async function refreshList(selectId) {
-        const docs = await Api.listDocuments();
+        const { items: docs } = await Api.listDocuments();
         docListEl.innerHTML = '';
         for (const doc of docs) {
           const li = document.createElement('li');
@@ -164,7 +178,13 @@
         }
       });
 
-      refreshList();
+      (async function bootstrap() {
+        // A 401 here redirects to /login.html automatically (see api.js);
+        // nothing below this line runs for an unauthenticated visitor.
+        const user = await Api.me();
+        accountEmailEl.textContent = user.email;
+        await refreshList();
+      })();
     })();
   </script>
 </body>

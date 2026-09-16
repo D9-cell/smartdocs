@@ -34,7 +34,17 @@ smartdocs:
   content:
     max-bytes: 1048576
   request:
-    max-body-bytes: 4194304
+    max-body-bytes: 2097152
+  document:
+    max-per-user: 500
+  security:
+    # false only for local http development — a Secure cookie is silently
+    # ignored by real browsers over plain http (see README).
+    cookie-secure: ${SMARTDOCS_COOKIE_SECURE:true}
+    # Dev-only default. Override in every real environment — rotating this
+    # invalidates historical ip_hash correlation across the boundary, which
+    # is the point (design doc section 8.2).
+    ip-hash-salt: ${SMARTDOCS_IP_HASH_SALT:dev-only-ip-hash-salt-change-me}
 
 management:
   endpoints:

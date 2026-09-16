@@ -1,0 +1,42 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-seed-system-user
+      author: statecore
+      logicalFilePath: db/changelog/changes/009-seed-system-user.yaml
+      comment: >
+        Fixed-id, permanently DISABLED account that pre-Stage-1 documents are
+        reassigned to in 010. Login checks status before verifying the
+        password hash, so password_hash is set to a value no PasswordEncoder
+        ever produces — this account is unreachable by design, not by luck.
+      changes:
+        - insert:
+            tableName: app_user
+            columns:
+              - column:
+                  name: id
+                  value: 00000000-0000-0000-0000-000000000001
+              - column:
+                  name: email
+                  value: system@local.invalid
+              - column:
+                  name: display_name
+                  value: System
+              - column:
+                  name: password_hash
+                  value: "!SYSTEM-ACCOUNT-UNREACHABLE!"
+              - column:
+                  name: status
+                  value: DISABLED
+              - column:
+                  name: password_changed_at
+                  valueComputed: now()
+              - column:
+                  name: created_at
+                  valueComputed: now()
+              - column:
+                  name: updated_at
+                  valueComputed: now()
+      rollback:
+        - delete:
+            tableName: app_user
+            where: id = '00000000-0000-0000-0000-000000000001'

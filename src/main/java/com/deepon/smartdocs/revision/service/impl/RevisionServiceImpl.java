@@ -1,5 +1,6 @@
 package com.deepon.smartdocs.revision.service.impl;
 
+import com.deepon.smartdocs.common.Actor;
 import com.deepon.smartdocs.document.exception.DocumentNotFoundException;
 import com.deepon.smartdocs.document.repository.DocumentRepository;
 import com.deepon.smartdocs.revision.entity.DocumentRevision;
@@ -36,21 +37,21 @@ public class RevisionServiceImpl implements RevisionService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<RevisionSummaryProjection> listRevisions(UUID documentId) {
-        requireDocumentExists(documentId); // 404s if missing or soft-deleted; also confirms existence before listing history
+    public List<RevisionSummaryProjection> listRevisions(Actor actor, UUID documentId) {
+        requireDocumentOwned(actor, documentId); // 404s if missing, soft-deleted, or not this caller's document
         return revisionRepository.findSummariesByDocumentId(documentId);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public DocumentRevision getRevision(UUID documentId, long version) {
-        requireDocumentExists(documentId);
+    public DocumentRevision getRevision(Actor actor, UUID documentId, long version) {
+        requireDocumentOwned(actor, documentId);
         return revisionRepository.findByDocumentIdAndVersion(documentId, version)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
     }
 
-    private void requireDocumentExists(UUID documentId) {
-        if (documentRepository.findByIdAndDeletedAtIsNull(documentId).isEmpty()) {
+    private void requireDocumentOwned(Actor actor, UUID documentId) {
+        if (documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(documentId, actor.userId()).isEmpty()) {
             throw new DocumentNotFoundException(documentId);
         }
     }

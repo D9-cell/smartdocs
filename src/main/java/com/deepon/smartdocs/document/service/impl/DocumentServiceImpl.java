@@ -1,9 +1,12 @@
 package com.deepon.smartdocs.document.service.impl;
 
+import com.deepon.smartdocs.common.Actor;
 import com.deepon.smartdocs.document.ContentHasher;
 import com.deepon.smartdocs.document.ContentValidator;
+import com.deepon.smartdocs.document.CursorCodec;
 import com.deepon.smartdocs.document.entity.Document;
 import com.deepon.smartdocs.document.exception.ContentHashMismatchException;
+import com.deepon.smartdocs.document.exception.DocumentLimitReachedException;
 import com.deepon.smartdocs.document.exception.DocumentNotFoundException;
 import com.deepon.smartdocs.document.exception.VersionMismatchException;
 import com.deepon.smartdocs.document.repository.DocumentRepository;
@@ -12,9 +15,8 @@ import com.deepon.smartdocs.document.service.DocumentService;
 import com.deepon.smartdocs.revision.service.RevisionService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,7 +32,9 @@ public class DocumentServiceImpl implements DocumentService {
     private final RevisionService revisionService;
     private final ContentValidator contentValidator;
     private final ContentHasher contentHasher;
+    private final CursorCodec cursorCodec;
     private final Clock clock;
+    private final int maxDocumentsPerUser;
 
     private final Counter saveTotal;
     private final Counter saveConflictTotal;
@@ -40,13 +44,17 @@ public class DocumentServiceImpl implements DocumentService {
                                 RevisionService revisionService,
                                 ContentValidator contentValidator,
                                 ContentHasher contentHasher,
+                                CursorCodec cursorCodec,
                                 Clock clock,
-                                MeterRegistry meterRegistry) {
+                                MeterRegistry meterRegistry,
+                                @Value("${smartdocs.document.max-per-user:500}") int maxDocumentsPerUser) {
         this.documentRepository = documentRepository;
         this.revisionService = revisionService;
         this.contentValidator = contentValidator;
         this.contentHasher = contentHasher;
+        this.cursorCodec = cursorCodec;
         this.clock = clock;
+        this.maxDocumentsPerUser = maxDocumentsPerUser;
         this.saveTotal = meterRegistry.counter("document_save_total");
         this.saveConflictTotal = meterRegistry.counter("document_save_conflict_total");
         this.saveNoopTotal = meterRegistry.counter("document_save_noop_total");
@@ -54,39 +62,53 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
-    public Document create(String rawTitle, String rawContent) {
+    public Document create(Actor actor, String rawTitle, String rawContent) {
         String title = contentValidator.normalizeAndValidateTitle(rawTitle);
         String content = rawContent == null ? "" : rawContent;
         contentValidator.validateContent(content);
+
+        // Two concurrent creates at the boundary may both pass this check;
+        // the cap overshoots by at most the concurrency. Accepted and
+        // documented, not fixed here (design doc section 10.5, 15).
+        if (documentRepository.countByOwnerIdAndDeletedAtIsNull(actor.userId()) >= maxDocumentsPerUser) {
+            throw new DocumentLimitReachedException(maxDocumentsPerUser);
+        }
 
         String hash = contentHasher.hash(content);
         int sizeBytes = contentHasher.utf8SizeBytes(content);
         Instant now = clock.instant();
 
-        Document document = new Document(UUID.randomUUID(), title, content, hash, sizeBytes,
-                1L, ANONYMOUS_ACTOR, ANONYMOUS_ACTOR, now, now);
+        Document document = new Document(UUID.randomUUID(), actor.userId(), title, content, hash, sizeBytes,
+                1L, actor.actorId(), actor.actorId(), now, now);
         documentRepository.save(document);
-        revisionService.recordRevision(document.getId(), 1L, content, hash, sizeBytes, ANONYMOUS_ACTOR, now);
+        revisionService.recordRevision(document.getId(), 1L, content, hash, sizeBytes, actor.actorId(), now);
         return document;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Document get(UUID id) {
-        return documentRepository.findByIdAndDeletedAtIsNull(id)
+    public Document get(Actor actor, UUID id) {
+        return documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .orElseThrow(() -> new DocumentNotFoundException(id));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<DocumentSummaryProjection> list(int limit, int offset) {
-        int cappedLimit = Math.max(1, Math.min(limit, 200));
-        Pageable pageable = PageRequest.of(offset / cappedLimit, cappedLimit, Sort.unsorted());
-        // findSummaries already orders by updatedAt DESC; PageRequest here only paginates.
-        return documentRepository.findSummaries(PageRequest.of(0, cappedLimit + offset)).stream()
-                .skip(offset)
-                .limit(cappedLimit)
-                .toList();
+    public Page list(Actor actor, int limit, String cursor) {
+        PageRequest pageable = PageRequest.of(0, limit);
+        List<DocumentSummaryProjection> items = cursor == null
+                ? documentRepository.findFirstPage(actor.userId(), pageable)
+                : decodeAndFetchNextPage(actor, limit, cursor, pageable);
+
+        String nextCursor = items.size() < limit || items.isEmpty()
+                ? null
+                : cursorCodec.encode(items.get(items.size() - 1).getUpdatedAt(), items.get(items.size() - 1).getId());
+        return new Page(items, nextCursor);
+    }
+
+    private List<DocumentSummaryProjection> decodeAndFetchNextPage(Actor actor, int limit, String cursor, PageRequest pageable) {
+        CursorCodec.Cursor decoded = cursorCodec.decode(cursor);
+        return documentRepository.findNextPage(actor.userId(), decoded.updatedAt(), decoded.id(), pageable);
     }
 
     /**
@@ -97,7 +119,7 @@ public class DocumentServiceImpl implements DocumentService {
      */
     @Override
     @Transactional
-    public Document updateContent(UUID id, long expectedVersion, String content, String clientHash) {
+    public Document updateContent(Actor actor, UUID id, long expectedVersion, String content, String clientHash) {
         saveTotal.increment();
         contentValidator.validateContent(content);
         String hash = contentHasher.hash(content);
@@ -106,7 +128,7 @@ public class DocumentServiceImpl implements DocumentService {
             throw new ContentHashMismatchException(clientHash, hash);
         }
 
-        Document current = documentRepository.findByIdAndDeletedAtIsNull(id)
+        Document current = documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .orElseThrow(() -> new DocumentNotFoundException(id));
 
         if (current.getVersion() != expectedVersion) {
@@ -121,53 +143,53 @@ public class DocumentServiceImpl implements DocumentService {
 
         int sizeBytes = contentHasher.utf8SizeBytes(content);
         Instant now = clock.instant();
-        int rows = documentRepository.updateContent(id, expectedVersion, content, hash, sizeBytes, ANONYMOUS_ACTOR, now);
+        int rows = documentRepository.updateContent(id, actor.userId(), expectedVersion, content, hash, sizeBytes, actor.actorId(), now);
 
         if (rows == 0) {
             saveConflictTotal.increment();
-            throw resolveRaceAfterFailedWrite(id, expectedVersion);
+            throw resolveRaceAfterFailedWrite(actor, id, expectedVersion);
         }
 
-        Document updated = documentRepository.findByIdAndDeletedAtIsNull(id)
+        Document updated = documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .orElseThrow(() -> new DocumentNotFoundException(id));
-        revisionService.recordRevision(id, updated.getVersion(), content, hash, sizeBytes, ANONYMOUS_ACTOR, now);
+        revisionService.recordRevision(id, updated.getVersion(), content, hash, sizeBytes, actor.actorId(), now);
         return updated;
     }
 
     @Override
     @Transactional
-    public Document rename(UUID id, long expectedVersion, String rawTitle) {
+    public Document rename(Actor actor, UUID id, long expectedVersion, String rawTitle) {
         String title = contentValidator.normalizeAndValidateTitle(rawTitle);
 
-        Document current = documentRepository.findByIdAndDeletedAtIsNull(id)
+        Document current = documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .orElseThrow(() -> new DocumentNotFoundException(id));
         if (current.getVersion() != expectedVersion) {
             throw versionMismatch(expectedVersion, current);
         }
 
         Instant now = clock.instant();
-        int rows = documentRepository.updateTitle(id, expectedVersion, title, ANONYMOUS_ACTOR, now);
+        int rows = documentRepository.updateTitle(id, actor.userId(), expectedVersion, title, actor.actorId(), now);
         if (rows == 0) {
-            throw resolveRaceAfterFailedWrite(id, expectedVersion);
+            throw resolveRaceAfterFailedWrite(actor, id, expectedVersion);
         }
 
-        return documentRepository.findByIdAndDeletedAtIsNull(id)
+        return documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .orElseThrow(() -> new DocumentNotFoundException(id));
     }
 
     @Override
     @Transactional
-    public void softDelete(UUID id, long expectedVersion) {
-        Document current = documentRepository.findByIdAndDeletedAtIsNull(id)
+    public void softDelete(Actor actor, UUID id, long expectedVersion) {
+        Document current = documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .orElseThrow(() -> new DocumentNotFoundException(id));
         if (current.getVersion() != expectedVersion) {
             throw versionMismatch(expectedVersion, current);
         }
 
         Instant now = clock.instant();
-        int rows = documentRepository.softDelete(id, expectedVersion, ANONYMOUS_ACTOR, now);
+        int rows = documentRepository.softDelete(id, actor.userId(), expectedVersion, actor.actorId(), now);
         if (rows == 0) {
-            throw resolveRaceAfterFailedWrite(id, expectedVersion);
+            throw resolveRaceAfterFailedWrite(actor, id, expectedVersion);
         }
     }
 
@@ -176,8 +198,8 @@ public class DocumentServiceImpl implements DocumentService {
      * the document is gone, soft-deleted, or someone else wrote first.
      * Distinguish by a follow-up read — never guess (design doc section 7.5).
      */
-    private RuntimeException resolveRaceAfterFailedWrite(UUID id, long expectedVersion) {
-        return documentRepository.findByIdAndDeletedAtIsNull(id)
+    private RuntimeException resolveRaceAfterFailedWrite(Actor actor, UUID id, long expectedVersion) {
+        return documentRepository.findByIdAndOwnerIdAndDeletedAtIsNull(id, actor.userId())
                 .<RuntimeException>map(reloaded -> versionMismatch(expectedVersion, reloaded))
                 .orElseGet(() -> new DocumentNotFoundException(id));
     }

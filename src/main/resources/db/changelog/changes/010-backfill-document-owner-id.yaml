@@ -1,0 +1,30 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-backfill-document-owner-id
+      author: statecore
+      logicalFilePath: db/changelog/changes/010-backfill-document-owner-id.yaml
+      changes:
+        - sql:
+            sql: UPDATE document SET owner_id = '00000000-0000-0000-0000-000000000001' WHERE owner_id IS NULL
+      rollback:
+        - sql:
+            sql: UPDATE document SET owner_id = NULL
+
+  - changeSet:
+      id: 010-verify-document-owner-id-backfilled
+      author: statecore
+      logicalFilePath: db/changelog/changes/010-backfill-document-owner-id.yaml
+      comment: >
+        Guard changeset: proves the backfill above left zero unowned rows
+        before 011 attempts to tighten owner_id to NOT NULL. HALT rather
+        than MARK_RAN — a failure here means the backfill itself is wrong
+        and must be investigated, not silently skipped.
+      preConditions:
+        - onFail: HALT
+        - sqlCheck:
+            expectedResult: 0
+            sql: SELECT count(*) FROM document WHERE owner_id IS NULL
+      changes:
+        - sql:
+            sql: SELECT 1
+      rollback: []

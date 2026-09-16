@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-document-owner-id-not-null
+      author: statecore
+      logicalFilePath: db/changelog/changes/011-document-owner-id-not-null.yaml
+      changes:
+        - addNotNullConstraint:
+            tableName: document
+            columnName: owner_id
+            columnDataType: uuid
+      rollback:
+        - dropNotNullConstraint:
+            tableName: document
+            columnName: owner_id
+            columnDataType: uuid

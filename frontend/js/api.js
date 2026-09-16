@@ -24,6 +24,13 @@ function parseEtag(response) {
   return match ? Number(match[1]) : null;
 }
 
+// A 401 SESSION_INVALID means "you have no valid session" — send the
+// browser to the login page. INVALID_CREDENTIALS (a normal failed login
+// attempt) is a 401 too but must NOT redirect, so this only fires on the
+// specific code, not on every 401 (the login page itself calls /auth/login
+// and needs to show that failure inline, not bounce in a loop).
+const LOGIN_PAGE = '/login.html';
+
 async function handle(response) {
   if (response.status === 204 || response.status === 304) {
     return { response, body: null };
@@ -33,6 +40,9 @@ async function handle(response) {
 
   if (!response.ok) {
     const code = body && typeof body === 'object' ? body.code : undefined;
+    if (code === 'SESSION_INVALID' && !window.location.pathname.endsWith('login.html')) {
+      window.location.href = LOGIN_PAGE;
+    }
     throw new ApiError(response.status, code, body);
   }
   return { response, body };
@@ -40,6 +50,33 @@ async function handle(response) {
 
 const Api = {
   ApiError,
+
+  async register(email, password, displayName) {
+    const { body } = await handle(await fetch('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, displayName }),
+    }));
+    return body;
+  },
+
+  async login(email, password) {
+    const { body } = await handle(await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }));
+    return body;
+  },
+
+  async logout() {
+    await handle(await fetch('/api/v1/auth/logout', { method: 'POST' }));
+  },
+
+  async me() {
+    const { body } = await handle(await fetch('/api/v1/auth/me', { cache: 'no-store' }));
+    return body;
+  },
 
   async createDocument(title, content) {
     const { body } = await handle(await fetch('/api/v1/documents', {
@@ -50,9 +87,10 @@ const Api = {
     return body;
   },
 
-  async listDocuments(limit = 100, offset = 0) {
-    const { body } = await handle(await fetch(`/api/v1/documents?limit=${limit}&offset=${offset}`));
-    return body;
+  async listDocuments(limit = 100, cursor = null) {
+    const query = cursor ? `?limit=${limit}&cursor=${encodeURIComponent(cursor)}` : `?limit=${limit}`;
+    const { body } = await handle(await fetch(`/api/v1/documents${query}`));
+    return body; // { items, nextCursor }
   },
 
   async getDocument(id) {

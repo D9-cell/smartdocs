@@ -5,9 +5,20 @@ import com.deepon.smartdocs.common.web.PreconditionRequiredException;
 import com.deepon.smartdocs.config.RequestIdFilter;
 import com.deepon.smartdocs.document.exception.ContentHashMismatchException;
 import com.deepon.smartdocs.document.exception.ContentTooLargeException;
+import com.deepon.smartdocs.document.exception.CursorInvalidException;
+import com.deepon.smartdocs.document.exception.DocumentLimitReachedException;
 import com.deepon.smartdocs.document.exception.DocumentNotFoundException;
 import com.deepon.smartdocs.document.exception.InvalidContentException;
 import com.deepon.smartdocs.document.exception.VersionMismatchException;
+import com.deepon.smartdocs.user.exception.AccountLockedException;
+import com.deepon.smartdocs.user.exception.AuthBusyException;
+import com.deepon.smartdocs.user.exception.EmailTakenException;
+import com.deepon.smartdocs.user.exception.InvalidCredentialsException;
+import com.deepon.smartdocs.user.exception.RateLimitedException;
+import com.deepon.smartdocs.user.exception.SessionInvalidException;
+import com.deepon.smartdocs.user.exception.SessionNotFoundException;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -44,8 +55,19 @@ public class GlobalExceptionHandler {
     /** Above this, {@code currentContent} is omitted from a 412 body and {@code currentContentTruncated: true} is set instead. */
     private static final int MAX_ECHOED_CONTENT_BYTES = 256 * 1024;
 
+    private final MeterRegistry meterRegistry;
+
+    public GlobalExceptionHandler(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
+
     @ExceptionHandler(DocumentNotFoundException.class)
-    public ResponseEntity<ProblemDetail> handleNotFound(DocumentNotFoundException ex) {
+    public ResponseEntity<ProblemDetail> handleNotFound(DocumentNotFoundException ex, HttpServletRequest request) {
+        // design doc section 12: authz_denied_total{endpoint} — a not-owned
+        // document and an absent one produce the identical 404 by design, so
+        // this counter can't (and shouldn't) distinguish them either; id
+        // probing shows up here first as a spike per endpoint.
+        meterRegistry.counter("authz_denied_total", "endpoint", request.getRequestURI()).increment();
         ProblemDetail pd = problem(HttpStatus.NOT_FOUND, "document-not-found", "Document not found",
                 "No document exists with id " + ex.getDocumentId() + ", or it has been deleted.");
         pd.setProperty("code", "DOCUMENT_NOT_FOUND");
@@ -105,6 +127,80 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ProblemDetail> handleContentHashMismatch(ContentHashMismatchException ex) {
         ProblemDetail pd = problem(HttpStatus.BAD_REQUEST, "content-hash-mismatch", "Content hash mismatch", ex.getMessage());
         pd.setProperty("code", "CONTENT_HASH_MISMATCH");
+        return respond(HttpStatus.BAD_REQUEST, pd);
+    }
+
+    @ExceptionHandler(EmailTakenException.class)
+    public ResponseEntity<ProblemDetail> handleEmailTaken(EmailTakenException ex) {
+        ProblemDetail pd = problem(HttpStatus.CONFLICT, "email-taken", "Email already registered", ex.getMessage());
+        pd.setProperty("code", "EMAIL_TAKEN");
+        return respond(HttpStatus.CONFLICT, pd);
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidCredentials(InvalidCredentialsException ex) {
+        ProblemDetail pd = problem(HttpStatus.UNAUTHORIZED, "invalid-credentials", "Invalid credentials", ex.getMessage());
+        pd.setProperty("code", "INVALID_CREDENTIALS");
+        return respond(HttpStatus.UNAUTHORIZED, pd);
+    }
+
+    @ExceptionHandler(SessionInvalidException.class)
+    public ResponseEntity<ProblemDetail> handleSessionInvalid(SessionInvalidException ex) {
+        ProblemDetail pd = problem(HttpStatus.UNAUTHORIZED, "session-invalid", "Session invalid", ex.getMessage());
+        pd.setProperty("code", "SESSION_INVALID");
+        return respond(HttpStatus.UNAUTHORIZED, pd);
+    }
+
+    @ExceptionHandler(SessionNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handleSessionNotFound(SessionNotFoundException ex) {
+        ProblemDetail pd = problem(HttpStatus.NOT_FOUND, "session-not-found", "Session not found", ex.getMessage());
+        pd.setProperty("code", "SESSION_NOT_FOUND");
+        return respond(HttpStatus.NOT_FOUND, pd);
+    }
+
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<ProblemDetail> handleAccountLocked(AccountLockedException ex) {
+        ProblemDetail pd = problem(HttpStatus.LOCKED, "account-locked", "Account locked", ex.getMessage());
+        pd.setProperty("code", "ACCOUNT_LOCKED");
+        return respond(HttpStatus.LOCKED, pd);
+    }
+
+    @ExceptionHandler(RateLimitedException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimited(RateLimitedException ex) {
+        ProblemDetail pd = problem(HttpStatus.TOO_MANY_REQUESTS, "rate-limited", "Too many attempts", ex.getMessage());
+        pd.setProperty("code", "RATE_LIMITED");
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(pd);
+    }
+
+    @ExceptionHandler(AuthBusyException.class)
+    public ResponseEntity<ProblemDetail> handleAuthBusy(AuthBusyException ex) {
+        ProblemDetail pd = problem(HttpStatus.SERVICE_UNAVAILABLE, "auth-busy", "Authentication busy", ex.getMessage());
+        pd.setProperty("code", "AUTH_BUSY");
+        return respond(HttpStatus.SERVICE_UNAVAILABLE, pd);
+    }
+
+    @ExceptionHandler(ValidationFailedException.class)
+    public ResponseEntity<ProblemDetail> handleValidationFailed(ValidationFailedException ex) {
+        ProblemDetail pd = problem(HttpStatus.BAD_REQUEST, "validation-failed", "Validation failed", "One or more fields are invalid.");
+        pd.setProperty("code", "VALIDATION_FAILED");
+        pd.setProperty("errors", ex.getViolations());
+        return respond(HttpStatus.BAD_REQUEST, pd);
+    }
+
+    @ExceptionHandler(DocumentLimitReachedException.class)
+    public ResponseEntity<ProblemDetail> handleDocumentLimitReached(DocumentLimitReachedException ex) {
+        ProblemDetail pd = problem(HttpStatus.CONFLICT, "document-limit-reached", "Document limit reached", ex.getMessage());
+        pd.setProperty("code", "DOCUMENT_LIMIT_REACHED");
+        return respond(HttpStatus.CONFLICT, pd);
+    }
+
+    @ExceptionHandler(CursorInvalidException.class)
+    public ResponseEntity<ProblemDetail> handleCursorInvalid(CursorInvalidException ex) {
+        ProblemDetail pd = problem(HttpStatus.BAD_REQUEST, "cursor-invalid", "Invalid pagination cursor", ex.getMessage());
+        pd.setProperty("code", "CURSOR_INVALID");
         return respond(HttpStatus.BAD_REQUEST, pd);
     }
 

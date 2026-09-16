@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-add-document-owner-id-nullable
+      author: statecore
+      logicalFilePath: db/changelog/changes/008-add-document-owner-id-nullable.yaml
+      comment: >
+        Nullable first. A single addColumn NOT NULL fails against a database
+        that already has document rows (Stage 0 rows have no owner yet) —
+        backfill (010) then tighten (011) in separate steps.
+      changes:
+        - addColumn:
+            tableName: document
+            columns:
+              - column:
+                  name: owner_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            tableName: document
+            columnName: owner_id

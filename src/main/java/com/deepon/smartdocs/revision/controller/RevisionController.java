@@ -1,5 +1,6 @@
 package com.deepon.smartdocs.revision.controller;
 
+import com.deepon.smartdocs.common.Actor;
 import com.deepon.smartdocs.revision.entity.DocumentRevision;
 import com.deepon.smartdocs.revision.dto.RevisionResponse;
 import com.deepon.smartdocs.revision.dto.RevisionSummaryResponse;
@@ -25,16 +26,16 @@ public class RevisionController {
     }
 
     @GetMapping
-    public ResponseEntity<List<RevisionSummaryResponse>> list(@PathVariable UUID documentId) {
-        List<RevisionSummaryResponse> revisions = revisionService.listRevisions(documentId).stream()
+    public ResponseEntity<List<RevisionSummaryResponse>> list(Actor actor, @PathVariable UUID documentId) {
+        List<RevisionSummaryResponse> revisions = revisionService.listRevisions(actor, documentId).stream()
                 .map(RevisionSummaryResponse::from)
                 .toList();
         return ResponseEntity.ok(revisions);
     }
 
     @GetMapping("/{version}")
-    public ResponseEntity<RevisionResponse> get(@PathVariable UUID documentId, @PathVariable long version) {
-        DocumentRevision revision = revisionService.getRevision(documentId, version);
+    public ResponseEntity<RevisionResponse> get(Actor actor, @PathVariable UUID documentId, @PathVariable long version) {
+        DocumentRevision revision = revisionService.getRevision(actor, documentId, version);
         return ResponseEntity.ok(RevisionResponse.from(revision));
     }
 }

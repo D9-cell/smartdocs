@@ -49,7 +49,8 @@ class MigrationRollbackTest {
             Liquibase liquibase = new Liquibase(CHANGELOG, new ClassLoaderResourceAccessor(), database);
 
             liquibase.update(new Contexts(), new LabelExpression());
-            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder("document", "document_revision");
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(
+                    "document", "document_revision", "app_user", "user_session", "login_attempt");
 
             // `rollback <tag>` reverts everything deployed *after* the tag.
             // Changeset 004 (the tagDatabase changeset itself) is the last
@@ -62,6 +63,36 @@ class MigrationRollbackTest {
             int changeSetCount = liquibase.getDatabaseChangeLog().getChangeSets().size();
             liquibase.rollback(changeSetCount, new Contexts(), new LabelExpression());
             assertThat(applicationTableNames(connection)).isEmpty();
+        }
+    }
+
+    /**
+     * The doc's exact recipe (section 8.5 verification note): "point
+     * Liquibase at an empty database, run update, then rollback stage-0,
+     * confirm only Stage 0 objects remain, then update again." Distinct from
+     * the test above — this rolls back to a named tag partway through the
+     * changelog rather than unwinding everything, and then proves the
+     * changesets are safe to re-apply going forward from that point.
+     */
+    @Test
+    void rollbackToStage0LeavesOnlyStage0ObjectsThenUpdateAgainRestoresStage1() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+
+            Database database = DatabaseFactory.getInstance()
+                    .findCorrectDatabaseImplementation(new JdbcConnection(connection));
+            Liquibase liquibase = new Liquibase(CHANGELOG, new ClassLoaderResourceAccessor(), database);
+
+            liquibase.update(new Contexts(), new LabelExpression());
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(
+                    "document", "document_revision", "app_user", "user_session", "login_attempt");
+
+            liquibase.rollback("stage-0", new Contexts(), new LabelExpression());
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder("document", "document_revision");
+
+            liquibase.update(new Contexts(), new LabelExpression());
+            assertThat(applicationTableNames(connection)).containsExactlyInAnyOrder(
+                    "document", "document_revision", "app_user", "user_session", "login_attempt");
         }
     }
 

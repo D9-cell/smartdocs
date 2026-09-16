@@ -1,14 +1,20 @@
 package com.deepon.smartdocs;
 
+import com.deepon.smartdocs.common.Actor;
+import com.deepon.smartdocs.common.IdGenerator;
 import com.deepon.smartdocs.document.entity.Document;
 import com.deepon.smartdocs.document.exception.VersionMismatchException;
 import com.deepon.smartdocs.document.service.DocumentService;
 import com.deepon.smartdocs.revision.service.RevisionService;
 import com.deepon.smartdocs.support.AbstractPostgresTest;
+import com.deepon.smartdocs.support.TestUsers;
+import com.deepon.smartdocs.user.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -41,9 +47,25 @@ class ConcurrencySaveTest extends AbstractPostgresTest {
     @Autowired
     private RevisionService revisionService;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private IdGenerator idGenerator;
+
+    @Autowired
+    private Clock clock;
+
+    private Actor actor;
+
+    @BeforeEach
+    void createTestUser() {
+        actor = TestUsers.createActor(userRepository, idGenerator, clock);
+    }
+
     @RepeatedTest(100)
     void exactlyOneOfTwoConcurrentSameVersionSavesSucceeds() throws Exception {
-        Document created = documentService.create("Race", "initial");
+        Document created = documentService.create(actor, "Race", "initial");
         UUID id = created.getId();
         long baseVersion = created.getVersion();
         assertThat(baseVersion).isEqualTo(1L);
@@ -69,9 +91,9 @@ class ConcurrencySaveTest extends AbstractPostgresTest {
         assertThat(successCount.get()).isEqualTo(1);
         assertThat(conflictCount.get()).isEqualTo(1);
 
-        Document finalState = documentService.get(id);
+        Document finalState = documentService.get(actor, id);
         assertThat(finalState.getVersion()).isEqualTo(2L);
-        assertThat(revisionService.listRevisions(id)).hasSize(2);
+        assertThat(revisionService.listRevisions(actor, id)).hasSize(2);
     }
 
     private Runnable saveAttempt(UUID id, long baseVersion, String content, CountDownLatch startLatch,
@@ -79,7 +101,7 @@ class ConcurrencySaveTest extends AbstractPostgresTest {
         return () -> {
             try {
                 startLatch.await();
-                documentService.updateContent(id, baseVersion, content, null);
+                documentService.updateContent(actor, id, baseVersion, content, null);
                 successCount.incrementAndGet();
             } catch (VersionMismatchException e) {
                 conflictCount.incrementAndGet();
